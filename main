@@ -1,0 +1,571 @@
+.data
+    ESTADO_ATUAL:    .word 0
+    TEMPO_BASE_VERDE: .word 5
+    TEMPO_AMARELO:   .word 2
+    TEMPO_VERMELHO:  .word 3
+    
+    TAMANHO_JANELA:  .word 5
+    vetor_historico: .word 0:5
+    indice_vetor:    .word 0
+    contador_leituras: .word 0
+    
+    total_ciclos:    .word 0
+    fluxo_maximo:    .word 0
+    fluxo_minimo:    .word 99
+    
+    msg_banner:      .asciiz "\n====================================================\n"
+    msg_titulo:      .asciiz "  SISTEMA DE SEMAFORO INTELIGENTE - IoT v2.0\n"
+    msg_subtitulo:   .asciiz "  Controle Adaptativo de Trafego Urbano\n"
+    msg_banner2:     .asciiz "====================================================\n"
+    
+    msg_menu:        .asciiz "\n--- MENU DE OPERACAO ---\n"
+    msg_op1:         .asciiz "1. Executar ciclo do semaforo\n"
+    msg_op2:         .asciiz "2. Visualizar estatisticas\n"
+    msg_op3:         .asciiz "3. Resetar sistema\n"
+    msg_op4:         .asciiz "0. Encerrar simulacao\n"
+    msg_escolha:     .asciiz "\nOpcao: "
+    
+    msg_input_fluxo: .asciiz "\n[SENSOR] Fluxo de veiculos detectado (0-99): "
+    msg_leitura_ok:  .asciiz "[OK] Leitura registrada\n"
+    
+    msg_estado:      .asciiz "\n--- ESTADO DO SEMAFORO ---\n"
+    msg_verde:       .asciiz "[VERDE]   "
+    msg_amarelo:     .asciiz "[AMARELO] "
+    msg_vermelho:    .asciiz "[VERMELHO]"
+    msg_tempo_rest:  .asciiz " Tempo: "
+    msg_unidades:    .asciiz " unidades\n"
+    
+    msg_painel_v:    .asciiz "[🟢] "
+    msg_painel_a:    .asciiz "[🟡] "
+    msg_painel_r:    .asciiz "[🔴] "
+    
+    msg_ajuste:      .asciiz "\n[SISTEMA] Tempo verde ajustado: "
+    msg_media:       .asciiz " unidades (Media: "
+    msg_veiculos:    .asciiz " veiculos)\n"
+    
+    msg_stats_titulo: .asciiz "\n=== ESTATISTICAS DO SISTEMA ===\n"
+    msg_stats_ciclos: .asciiz "Total de ciclos: "
+    msg_stats_max:    .asciiz "\nFluxo maximo: "
+    msg_stats_min:    .asciiz "\nFluxo minimo: "
+    msg_stats_media:  .asciiz "\nMedia movel atual: "
+    msg_stats_fim:    .asciiz "\n================================\n"
+    
+    msg_reset:       .asciiz "\n[SISTEMA] Sistema resetado!\n"
+    msg_encerrar:    .asciiz "\n[SISTEMA] Encerrando... Obrigado!\n"
+    msg_invalido:    .asciiz "\n[ERRO] Opcao invalida!\n"
+    
+    msg_transicao:   .asciiz " -> "
+    nova_linha:      .asciiz "\n"
+    separador:       .asciiz " | "
+
+.text
+.globl main
+
+main:
+    jal exibir_banner
+    
+menu_principal:
+    jal exibir_menu
+    
+    li $v0, 5
+    syscall
+    move $t0, $v0
+    
+    beq $t0, 1, executar_ciclo
+    beq $t0, 2, mostrar_estatisticas
+    beq $t0, 3, resetar_sistema
+    beq $t0, 0, encerrar_programa
+    
+    li $v0, 4
+    la $a0, msg_invalido
+    syscall
+    j menu_principal
+
+executar_ciclo:
+    jal ler_sensor_fluxo
+    move $s0, $v0
+    
+    jal atualizar_estatisticas
+    
+    move $a0, $s0
+    jal salvar_historico
+    
+    jal calcular_tempo_verde
+    move $s1, $v0
+    
+    jal exibir_ajuste
+    
+    jal executar_ciclo_completo
+    
+    lw $t0, total_ciclos
+    addi $t0, $t0, 1
+    sw $t0, total_ciclos
+    
+    j menu_principal
+
+mostrar_estatisticas:
+    jal exibir_estatisticas
+    j menu_principal
+
+resetar_sistema:
+    jal resetar_dados
+    j menu_principal
+
+encerrar_programa:
+    li $v0, 4
+    la $a0, msg_encerrar
+    syscall
+    
+    li $v0, 10
+    syscall
+
+exibir_banner:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    li $v0, 4
+    la $a0, msg_banner
+    syscall
+    la $a0, msg_titulo
+    syscall
+    la $a0, msg_subtitulo
+    syscall
+    la $a0, msg_banner2
+    syscall
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+exibir_menu:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    li $v0, 4
+    la $a0, msg_menu
+    syscall
+    la $a0, msg_op1
+    syscall
+    la $a0, msg_op2
+    syscall
+    la $a0, msg_op3
+    syscall
+    la $a0, msg_op4
+    syscall
+    la $a0, msg_escolha
+    syscall
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+ler_sensor_fluxo:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    li $v0, 4
+    la $a0, msg_input_fluxo
+    syscall
+    
+    li $v0, 5
+    syscall
+    move $t0, $v0
+    
+    bltz $t0, set_zero
+    li $t1, 99
+    bgt $t0, $t1, set_max
+    move $v0, $t0
+    j fim_leitura
+    
+set_zero:
+    li $v0, 0
+    j fim_leitura
+    
+set_max:
+    li $v0, 99
+    
+fim_leitura:
+    li $v0, 4
+    la $a0, msg_leitura_ok
+    syscall
+    
+    move $v0, $t0
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+salvar_historico:
+    addi $sp, $sp, -16
+    sw $ra, 12($sp)
+    sw $t0, 8($sp)
+    sw $t1, 4($sp)
+    sw $t2, 0($sp)
+    
+    lw $t0, indice_vetor
+    lw $t1, TAMANHO_JANELA
+    
+    la $t2, vetor_historico
+    sll $t3, $t0, 2
+    add $t2, $t2, $t3
+    
+    sw $a0, 0($t2)
+    
+    addi $t0, $t0, 1
+    div $t0, $t1
+    mfhi $t0
+    sw $t0, indice_vetor
+    
+    lw $t0, contador_leituras
+    addi $t0, $t0, 1
+    sw $t0, contador_leituras
+    
+    lw $ra, 12($sp)
+    lw $t0, 8($sp)
+    lw $t1, 4($sp)
+    lw $t2, 0($sp)
+    addi $sp, $sp, 16
+    jr $ra
+
+calcular_tempo_verde:
+    addi $sp, $sp, -20
+    sw $ra, 16($sp)
+    sw $s0, 12($sp)
+    sw $s1, 8($sp)
+    sw $s2, 4($sp)
+    sw $s3, 0($sp)
+    
+    li $s0, 0
+    li $s1, 0
+    lw $s2, TAMANHO_JANELA
+    la $s3, vetor_historico
+    
+loop_media:
+    bge $s1, $s2, calcular_resultado
+    
+    sll $t0, $s1, 2
+    add $t1, $s3, $t0
+    lw $t2, 0($t1)
+    add $s0, $s0, $t2
+    
+    addi $s1, $s1, 1
+    j loop_media
+    
+calcular_resultado:
+    div $s0, $s2
+    mflo $t3
+    
+    lw $t4, TEMPO_BASE_VERDE
+    li $t5, 20
+    ble $t3, $t5, ajuste_baixo
+    
+    li $t5, 50
+    ble $t3, $t5, ajuste_medio
+    
+    addi $v0, $t4, 2
+    j limitar_tempo
+    
+ajuste_medio:
+    addi $v0, $t4, 1
+    j limitar_tempo
+    
+ajuste_baixo:
+    move $v0, $t4
+    
+limitar_tempo:
+    li $t5, 3
+    blt $v0, $t5, set_min_tempo
+    li $t5, 10
+    bgt $v0, $t5, set_max_tempo
+    j fim_calculo_tempo
+    
+set_min_tempo:
+    li $v0, 3
+    j fim_calculo_tempo
+    
+set_max_tempo:
+    li $v0, 10
+    
+fim_calculo_tempo:
+    lw $ra, 16($sp)
+    lw $s0, 12($sp)
+    lw $s1, 8($sp)
+    lw $s2, 4($sp)
+    lw $s3, 0($sp)
+    addi $sp, $sp, 20
+    jr $ra
+
+executar_ciclo_completo:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    li $t0, 0
+    sw $t0, ESTADO_ATUAL
+    move $a0, $s1
+    li $a1, 0
+    jal exibir_estado
+    
+    li $t0, 1
+    sw $t0, ESTADO_ATUAL
+    lw $a0, TEMPO_AMARELO
+    li $a1, 1
+    jal exibir_estado
+    
+    li $t0, 2
+    sw $t0, ESTADO_ATUAL
+    lw $a0, TEMPO_VERMELHO
+    li $a1, 2
+    jal exibir_estado
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+exibir_estado:
+    addi $sp, $sp, -12
+    sw $ra, 8($sp)
+    sw $s0, 4($sp)
+    sw $s1, 0($sp)
+    
+    move $s0, $a0
+    move $s1, $a1
+    
+    li $v0, 4
+    beq $s1, 0, estado_verde_txt
+    beq $s1, 1, estado_amarelo_txt
+    j estado_vermelho_txt
+    
+estado_verde_txt:
+    la $a0, msg_verde
+    syscall
+    j mostrar_tempo
+    
+estado_amarelo_txt:
+    la $a0, msg_amarelo
+    syscall
+    j mostrar_tempo
+    
+estado_vermelho_txt:
+    la $a0, msg_vermelho
+    syscall
+    
+mostrar_tempo:
+    la $a0, msg_tempo_rest
+    syscall
+    
+    move $a0, $s0
+    li $v0, 1
+    syscall
+    
+    li $v0, 4
+    la $a0, msg_unidades
+    syscall
+    
+    beq $s1, 0, painel_verde
+    beq $s1, 1, painel_amarelo
+    j painel_vermelho
+    
+painel_verde:
+    la $a0, msg_painel_v
+    syscall
+    j fim_painel
+    
+painel_amarelo:
+    la $a0, msg_painel_a
+    syscall
+    j fim_painel
+    
+painel_vermelho:
+    la $a0, msg_painel_r
+    syscall
+    
+fim_painel:
+    li $v0, 4
+    la $a0, nova_linha
+    syscall
+    
+    lw $ra, 8($sp)
+    lw $s0, 4($sp)
+    lw $s1, 0($sp)
+    addi $sp, $sp, 12
+    jr $ra
+
+exibir_ajuste:
+    addi $sp, $sp, -8
+    sw $ra, 4($sp)
+    sw $s0, 0($sp)
+    
+    li $s0, 0
+    li $t0, 0
+    lw $t1, TAMANHO_JANELA
+    la $t2, vetor_historico
+    
+loop_media_display:
+    bge $t0, $t1, fim_media_display
+    sll $t3, $t0, 2
+    add $t4, $t2, $t3
+    lw $t5, 0($t4)
+    add $s0, $s0, $t5
+    addi $t0, $t0, 1
+    j loop_media_display
+    
+fim_media_display:
+    div $s0, $t1
+    mflo $s0
+    
+    li $v0, 4
+    la $a0, msg_ajuste
+    syscall
+    
+    move $a0, $s1
+    li $v0, 1
+    syscall
+    
+    li $v0, 4
+    la $a0, msg_media
+    syscall
+    
+    move $a0, $s0
+    li $v0, 1
+    syscall
+    
+    li $v0, 4
+    la $a0, msg_veiculos
+    syscall
+    
+    lw $ra, 4($sp)
+    lw $s0, 0($sp)
+    addi $sp, $sp, 8
+    jr $ra
+
+atualizar_estatisticas:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    lw $t0, fluxo_maximo
+    bgt $s0, $t0, atualizar_max
+    j verificar_min
+    
+atualizar_max:
+    sw $s0, fluxo_maximo
+    
+verificar_min:
+    lw $t0, fluxo_minimo
+    blt $s0, $t0, atualizar_min
+    j fim_stats
+    
+atualizar_min:
+    sw $s0, fluxo_minimo
+    
+fim_stats:
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+exibir_estatisticas:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    li $v0, 4
+    la $a0, msg_stats_titulo
+    syscall
+    
+    la $a0, msg_stats_ciclos
+    syscall
+    lw $a0, total_ciclos
+    li $v0, 1
+    syscall
+    
+    li $v0, 4
+    la $a0, msg_stats_max
+    syscall
+    lw $a0, fluxo_maximo
+    li $v0, 1
+    syscall
+    li $v0, 4
+    la $a0, msg_veiculos
+    syscall
+    
+    la $a0, msg_stats_min
+    syscall
+    lw $a0, fluxo_minimo
+    li $v0, 1
+    syscall
+    li $v0, 4
+    la $a0, msg_veiculos
+    syscall
+    
+    la $a0, msg_stats_media
+    syscall
+    jal calcular_media_atual
+    move $a0, $v0
+    li $v0, 1
+    syscall
+    li $v0, 4
+    la $a0, msg_veiculos
+    syscall
+    
+    la $a0, msg_stats_fim
+    syscall
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+calcular_media_atual:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    li $t0, 0
+    li $t1, 0
+    lw $t2, TAMANHO_JANELA
+    la $t3, vetor_historico
+    
+loop_calc_media:
+    bge $t1, $t2, fim_calc_media
+    sll $t4, $t1, 2
+    add $t5, $t3, $t4
+    lw $t6, 0($t5)
+    add $t0, $t0, $t6
+    addi $t1, $t1, 1
+    j loop_calc_media
+    
+fim_calc_media:
+    div $t0, $t2
+    mflo $v0
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+resetar_dados:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    li $t0, 0
+    la $t1, vetor_historico
+    lw $t2, TAMANHO_JANELA
+    
+loop_reset:
+    bge $t0, $t2, fim_reset_vetor
+    sll $t3, $t0, 2
+    add $t4, $t1, $t3
+    sw $zero, 0($t4)
+    addi $t0, $t0, 1
+    j loop_reset
+    
+fim_reset_vetor:
+    sw $zero, indice_vetor
+    sw $zero, contador_leituras
+    sw $zero, total_ciclos
+    sw $zero, fluxo_maximo
+    li $t0, 99
+    sw $t0, fluxo_minimo
+    
+    li $v0, 4
+    la $a0, msg_reset
+    syscall
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
