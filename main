@@ -35,9 +35,10 @@
     msg_tempo_rest:  .asciiz " Tempo: "
     msg_unidades:    .asciiz " unidades\n"
     
-    msg_painel_v:    .asciiz "[🟢] "
-    msg_painel_a:    .asciiz "[🟡] "
-    msg_painel_r:    .asciiz "[🔴] "
+    msg_painel_v:    .asciiz "[ O ]  <- VERDE LIGADO\n"
+    msg_painel_a:    .asciiz "[ O ]  <- AMARELO LIGADO\n"
+    msg_painel_r:    .asciiz "[ O ]  <- VERMELHO LIGADO\n"
+    painel_apagado:  .asciiz "[   ]  <- apagado\n"
     
     msg_ajuste:      .asciiz "\n[SISTEMA] Tempo verde ajustado: "
     msg_media:       .asciiz " unidades (Media: "
@@ -361,22 +362,41 @@ mostrar_tempo:
     la $a0, msg_unidades
     syscall
     
+    li $v0, 4
+    la $a0, nova_linha
+    syscall
+    
     beq $s1, 0, painel_verde
     beq $s1, 1, painel_amarelo
     j painel_vermelho
     
 painel_verde:
+    li $v0, 4
+    la $a0, painel_apagado
+    syscall
+    la $a0, painel_apagado
+    syscall
     la $a0, msg_painel_v
     syscall
     j fim_painel
     
 painel_amarelo:
+    li $v0, 4
+    la $a0, painel_apagado
+    syscall
     la $a0, msg_painel_a
+    syscall
+    la $a0, painel_apagado
     syscall
     j fim_painel
     
 painel_vermelho:
+    li $v0, 4
     la $a0, msg_painel_r
+    syscall
+    la $a0, painel_apagado
+    syscall
+    la $a0, painel_apagado
     syscall
     
 fim_painel:
